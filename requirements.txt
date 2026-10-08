@@ -1,0 +1,7 @@
+flask>=3.0
+numpy>=2.1
+pedalboard>=0.9.26
+yt-dlp[default]>=2026.1.1
+ytmusicapi>=1.10
+imageio-ffmpeg>=0.5
+requests>=2.31

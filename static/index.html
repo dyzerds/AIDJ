@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIDJ</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23ff8a3d'/%3E%3Cpath d='M4 11V7M7 11V4M10 11V6M13 11V8' stroke='%23140b04' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0c0c0f; --surface: #15151a; --surface-2: #1c1c23; --border: #2a2a34; --border-2: #3a3a46;
+    --text: #f2f2f5; --muted: #a0a0ad; --faint: #8b8b98; --accent: #ff8a3d; --accent-ink: #1a0e04; --danger: #ff6b6b;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh; background: var(--bg); color: var(--text);
+    background-image: radial-gradient(60rem 28rem at 50% -10rem, rgba(255, 138, 61, .13), transparent 70%);
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 16px 40px; }
+  header { margin-bottom: 28px; }
+  .logo { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 750; letter-spacing: -.02em; }
+  .eq { display: inline-flex; align-items: flex-end; gap: 3px; height: 26px; }
+  .eq i { width: 5px; border-radius: 3px; background: var(--accent); height: 40%; }
+  .eq i:nth-child(2) { height: 100%; } .eq i:nth-child(3) { height: 65%; } .eq i:nth-child(4) { height: 80%; }
+  .live .eq i { animation: eq .9s ease-in-out infinite alternate; }
+  .live .eq i:nth-child(2) { animation-delay: -.3s; } .live .eq i:nth-child(3) { animation-delay: -.6s; } .live .eq i:nth-child(4) { animation-delay: -.15s; }
+  @keyframes eq { from { height: 20%; } to { height: 100%; } }
+  .tag { margin: 6px 0 0; color: var(--muted); font-size: 17px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  label.field, legend { display: block; font-weight: 600; font-size: 15px; margin: 0 0 10px; padding: 0; }
+  fieldset { border: 0; margin: 24px 0 0; padding: 0; min-width: 0; }
+  input[type=url] {
+    width: 100%; height: 50px; padding: 0 16px; font: inherit; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=url]::placeholder { color: var(--faint); }
+  input[type=url]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 138, 61, .22); }
+
+  .opts { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
+  .opts.two { grid-template-columns: repeat(2, 1fr); }
+  .opt { position: relative; cursor: pointer; }
+  .opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .opt span {
+    display: block; height: 100%; padding: 14px; border-radius: 12px; background: var(--surface-2);
+    border: 1px solid var(--border); transition: border-color .15s, background .15s, transform .15s;
+  }
+  .opt b { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .opt svg { width: 18px; height: 18px; flex: none; stroke: var(--muted); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .opt small { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+  .opt:hover span { border-color: var(--border-2); }
+  .opt input:checked + span { border-color: var(--accent); background: rgba(255, 138, 61, .08); }
+  .opt input:checked + span svg { stroke: var(--accent); }
+  .opt input:focus-visible + span { box-shadow: 0 0 0 3px rgba(255, 138, 61, .35); }
+
+  button, .btn {
+    font: inherit; font-weight: 650; border: 0; border-radius: 12px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: filter .15s, background .15s, opacity .15s;
+  }
+  .go { width: 100%; height: 52px; margin-top: 26px; background: var(--accent); color: var(--accent-ink); font-size: 16px; }
+  .go:hover { filter: brightness(1.08); }
+  .go:disabled { opacity: .5; cursor: progress; }
+  button:focus-visible, .btn:focus-visible { outline: 3px solid rgba(255, 138, 61, .55); outline-offset: 2px; }
+  .err { margin: 14px 0 0; color: var(--danger); font-size: 14px; }
+
+  .ptop { display: flex; justify-content: space-between; gap: 16px; font-weight: 600; }
+  .ptop span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; margin: 14px 0 18px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+  .bar div { height: 100%; width: 0; background: linear-gradient(90deg, #ff6a2a, var(--accent), #ffb36b); border-radius: 99px; transition: width .6s ease; }
+  .steps { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--faint); flex-wrap: wrap; }
+  .steps li { padding: 5px 10px; border-radius: 99px; border: 1px solid var(--border); }
+  .steps li.on { color: var(--text); border-color: var(--accent); }
+  .steps li.done { color: var(--muted); }
+  .hint { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+
+  .rtop { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .eyebrow { margin: 0; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  h2 { margin: 2px 0 0; font-size: 22px; line-height: 1.25; letter-spacing: -.01em; word-break: break-word; }
+  .btn { height: 42px; padding: 0 16px; background: var(--accent); color: var(--accent-ink); flex: none; }
+  .btn:hover { filter: brightness(1.08); }
+  audio { width: 100%; margin: 18px 0 8px; }
+
+  #tracklist { list-style: none; margin: 8px 0 0; padding: 0; }
+  .track { display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: center; padding: 10px 8px; border-radius: 10px; }
+  .track.now { background: rgba(255, 138, 61, .08); }
+  .track .time {
+    height: 32px; padding: 0 10px; background: var(--surface-2); color: var(--text); font-size: 13px; border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .track .time:hover { border-color: var(--accent); }
+  .track.now .time { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .track .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .m { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trans { margin: 0 8px 0 44px; padding: 4px 0 4px 16px; border-left: 2px dashed var(--border-2); color: var(--muted); font-size: 13px; }
+  .trans b { color: var(--text); font-weight: 600; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .ghost { margin-top: 18px; height: 44px; padding: 0 16px; background: transparent; color: var(--text); border: 1px solid var(--border-2); }
+  .ghost:hover { background: var(--surface-2); }
+  footer { color: var(--faint); font-size: 13px; text-align: center; margin-top: 28px; }
+
+  @media (max-width: 600px) {
+    .wrap { padding-top: 32px; }
+    .opts { grid-template-columns: repeat(2, 1fr); }
+    .card { padding: 18px; }
+    .rtop { flex-direction: column; }
+    .track { grid-template-columns: 66px 1fr; }
+    .trans { margin-left: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <div class="logo"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>AIDJ</div>
+    <p class="tag">Paste a Spotify playlist. Get one seamless DJ mix.</p>
+  </header>
+
+  <form id="form" class="card" novalidate>
+    <label class="field" for="url">Spotify playlist link</label>
+    <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+           placeholder="https://open.spotify.com/playlist/…" required>
+
+    <fieldset>
+      <legend>Transition style</legend>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="style" value="auto" checked><span>
+          <b><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>Auto</b>
+          <small>AI picks the best style for each pair of songs</small></span></label>
+        <label class="opt"><input type="radio" name="style" value="blend"><span>
+          <b><svg viewBox="0 0 24 24"><path d="M2 12c3-6 6-6 9 0s6 6 11 0"/><path d="M2 12c3 6 6 6 9 0s6-6 11 0" opacity=".55"/></svg>Smooth Blend</b>
+          <small>Long beat-matched mix with a bass swap</small></span></label>
+        <label class="opt"><input type="radio" name="style" value="filter"><span>
+          <b><svg viewBox="0 0 24 24"><path d="M3 18h5c4 0 5-12 9-12h4"/></svg>Filter Sweep</b>
+          <small>One song filters away as the next opens up</small></span></label>
+        <label class="opt"><input type="radio" name="style" value="echo"><span>
+          <b><svg viewBox="0 0 24 24"><path d="M5 12h.01"/><path d="M9 8a5 5 0 0 1 0 8"/><path d="M13 5a9 9 0 0 1 0 14" opacity=".7"/><path d="M17 3a12 12 0 0 1 0 18" opacity=".4"/></svg>Echo Out</b>
+          <small>The song echoes away, the next one drops in</small></span></label>
+        <label class="opt"><input type="radio" name="style" value="cut"><span>
+          <b><svg viewBox="0 0 24 24"><path d="M3 12h7"/><path d="M14 12h7"/><path d="M12 4v16"/></svg>Quick Cut</b>
+          <small>A tight, punchy switch right on the beat</small></span></label>
+        <label class="opt"><input type="radio" name="style" value="spin"><span>
+          <b><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/><circle cx="12" cy="12" r="1.5"/></svg>Spinback</b>
+          <small>Vinyl rewind, then the next song slams in</small></span></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>When should songs change?</legend>
+      <div class="opts two">
+        <label class="opt"><input type="radio" name="position" value="end" checked><span>
+          <b>At the end</b><small>Full songs, mixed during the outro</small></span></label>
+        <label class="opt"><input type="radio" name="position" value="middle"><span>
+          <b>In the middle</b><small>Shorter songs, a faster-paced mix</small></span></label>
+      </div>
+    </fieldset>
+
+    <button class="go" type="submit">Create my mix</button>
+    <p class="err" id="err" role="alert" hidden></p>
+  </form>
+
+  <section id="progress" class="card" hidden>
+    <div class="ptop" aria-live="polite"><span id="pmsg">Starting…</span><span id="ppct">0%</span></div>
+    <div class="bar" role="progressbar" aria-label="Mix progress" aria-valuemin="0" aria-valuemax="100"><div id="pfill"></div></div>
+    <ol class="steps" id="steps"><li>Playlist</li><li>Download</li><li>Analyze</li><li>Mix</li></ol>
+    <p class="hint">The first mix of a playlist takes a few minutes because every song is downloaded and analysed.
+      Mixing the same playlist again (say, with another style) is much faster.</p>
+  </section>
+
+  <section id="result" class="card" hidden>
+    <div class="rtop">
+      <div><p class="eyebrow">Your mix</p><h2 id="rname"></h2></div>
+      <a id="dl" class="btn" href="#" download>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+        Download MP3</a>
+    </div>
+    <audio id="player" controls preload="metadata"></audio>
+    <ol id="tracklist"></ol>
+    <p id="skipped" class="muted" hidden></p>
+    <button id="again" class="ghost" type="button">Make another mix</button>
+  </section>
+
+  <footer>Runs on your own computer · for personal use with music you have the right to use</footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const form = $('form'), err = $('err'), go = form.querySelector('.go'), player = $('player');
+const SPOTIFY = /(open\.spotify\.com\/(intl-[\w-]+\/)?(embed\/)?|spotify:)(playlist|album)[\/:][A-Za-z0-9]{22}/;
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+
+function fmt(s) {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+function showError(msg) {
+  err.textContent = msg; err.hidden = !msg;
+}
+
+function setBusy(busy) {
+  go.disabled = busy;
+  go.textContent = busy ? 'Mixing…' : 'Create my mix';
+  document.body.classList.toggle('live', busy || !player.paused);
+}
+
+// Remember the last choices so the next mix is one click away.
+$('url').value = store.get('aidj-url') || '';
+for (const name of ['style', 'position']) {
+  const saved = store.get('aidj-' + name);
+  const input = saved && form.querySelector(`input[name=${name}][value="${saved}"]`);
+  if (input) input.checked = true;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showError('');
+  const url = $('url').value.trim();
+  if (!SPOTIFY.test(url)) {
+    showError('Paste a Spotify playlist link, like https://open.spotify.com/playlist/…');
+    $('url').focus();
+    return;
+  }
+  const style = form.elements.style.value, position = form.elements.position.value;
+  store.set('aidj-url', url); store.set('aidj-style', style); store.set('aidj-position', position);
+  setBusy(true);
+  try {
+    const res = await fetch('/api/mix', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, style, position }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not start the mix.');
+    store.set('aidj-job', data.id);
+    watch(data.id);
+  } catch (ex) {
+    setBusy(false);
+    showError(ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message);
+  }
+});
+
+function showProgress(p, msg) {
+  $('progress').hidden = false;
+  $('pmsg').textContent = msg;
+  const pct = Math.round(p * 100);
+  $('ppct').textContent = pct + '%';
+  $('pfill').style.width = pct + '%';
+  $('pfill').parentElement.setAttribute('aria-valuenow', pct);
+  const stage = p < 0.02 ? 0 : p < 0.45 ? 1 : p < 0.65 ? 2 : 3;
+  [...$('steps').children].forEach((li, i) => { li.className = i < stage ? 'done' : i === stage ? 'on' : ''; });
+}
+
+async function watch(id) {
+  setBusy(true);
+  $('result').hidden = true;
+  showProgress(0, 'Starting…');
+  let misses = 0;
+  while (true) {
+    let job;
+    try {
+      const res = await fetch('/api/jobs/' + id);
+      if (res.status === 404) { showError('AIDJ was restarted, so that mix stopped. Please start it again.'); break; }
+      job = await res.json();
+      misses = 0;
+    } catch {
+      if (++misses > 10) { showError('Lost connection to AIDJ. Is the app still running?'); break; }
+    }
+    if (job) {
+      showProgress(job.progress, job.message);
+      if (job.state === 'done') { store.set('aidj-result', JSON.stringify(job.result)); showResult(job.result, true); break; }
+      if (job.state === 'error') { showError(job.message); break; }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  store.set('aidj-job', null);
+  $('progress').hidden = true;
+  setBusy(false);
+}
+
+function showResult(r, scroll) {
+  $('rname').textContent = r.name;
+  player.src = r.file;
+  $('dl').href = r.file;
+  $('dl').setAttribute('download', r.download_name);
+  const list = $('tracklist');
+  list.replaceChildren();
+  r.tracks.forEach((t, i) => {
+    const li = document.createElement('li');
+    li.className = 'track';
+    li.dataset.time = t.time;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'time'; btn.textContent = fmt(t.time);
+    btn.setAttribute('aria-label', `Play from ${fmt(t.time)}: ${t.title}`);
+    btn.onclick = () => { player.currentTime = t.time; player.play(); };
+    const info = document.createElement('div');
+    info.style.minWidth = '0';
+    const title = document.createElement('div'); title.className = 't'; title.textContent = `${i + 1}. ${t.title}`;
+    const meta = document.createElement('div'); meta.className = 'm';
+    meta.textContent = [t.artist, `${t.bpm} BPM`, t.key].filter(Boolean).join(' · ');
+    info.append(title, meta);
+    li.append(btn, info);
+    list.append(li);
+    const tr = r.transitions[i];
+    if (tr) {
+      const note = document.createElement('li');
+      note.className = 'trans';
+      const b = document.createElement('b');
+      b.textContent = tr.name + (tr.bars ? ` · ${tr.bars} bars` : '');
+      note.append(b, ' — ' + tr.why);
+      list.append(note);
+    }
+  });
+  const sk = $('skipped');
+  sk.hidden = !r.skipped.length;
+  sk.textContent = r.skipped.length ? `Not found, so left out: ${r.skipped.map((t) => t.title).join(', ')}` : '';
+  $('result').hidden = false;
+  if (scroll) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+player.addEventListener('timeupdate', () => {
+  const rows = [...document.querySelectorAll('.track')];
+  let current = null;
+  for (const row of rows) if (player.currentTime + 0.25 >= Number(row.dataset.time)) current = row;
+  rows.forEach((row) => row.classList.toggle('now', row === current));
+});
+for (const ev of ['play', 'pause', 'ended']) player.addEventListener(ev, () => document.body.classList.toggle('live', !player.paused || go.disabled));
+
+$('again').addEventListener('click', () => {
+  player.pause();
+  $('result').hidden = true;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('url').focus();
+});
+
+// After a reload: keep following a running mix, or show the last finished one again.
+const running = store.get('aidj-job');
+if (running) watch(running);
+else {
+  try { const last = JSON.parse(store.get('aidj-result')); if (last) showResult(last, false); } catch {}
+}
+</script>
+</body>
+</html>
