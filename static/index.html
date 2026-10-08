@@ -24,11 +24,11 @@
   header { margin-bottom: 28px; }
   .logo { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 750; letter-spacing: -.02em; }
   .eq { display: inline-flex; align-items: flex-end; gap: 3px; height: 26px; }
-  .eq i { width: 5px; border-radius: 3px; background: var(--accent); height: 40%; }
-  .eq i:nth-child(2) { height: 100%; } .eq i:nth-child(3) { height: 65%; } .eq i:nth-child(4) { height: 80%; }
+  .eq i { width: 5px; height: 100%; border-radius: 3px; background: var(--accent); transform-origin: bottom; transform: scaleY(.4); }
+  .eq i:nth-child(2) { transform: scaleY(1); } .eq i:nth-child(3) { transform: scaleY(.65); } .eq i:nth-child(4) { transform: scaleY(.8); }
   .live .eq i { animation: eq .9s ease-in-out infinite alternate; }
   .live .eq i:nth-child(2) { animation-delay: -.3s; } .live .eq i:nth-child(3) { animation-delay: -.6s; } .live .eq i:nth-child(4) { animation-delay: -.15s; }
-  @keyframes eq { from { height: 20%; } to { height: 100%; } }
+  @keyframes eq { from { transform: scaleY(.2); } to { transform: scaleY(1); } }
   .tag { margin: 6px 0 0; color: var(--muted); font-size: 17px; }
 
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
@@ -71,7 +71,7 @@
   .ptop { display: flex; justify-content: space-between; gap: 16px; font-weight: 600; }
   .ptop span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
   .bar { height: 8px; margin: 14px 0 18px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
-  .bar div { height: 100%; width: 0; background: linear-gradient(90deg, #ff6a2a, var(--accent), #ffb36b); border-radius: 99px; transition: width .6s ease; }
+  .bar div { height: 100%; background: linear-gradient(90deg, #ff6a2a, var(--accent), #ffb36b); transform-origin: left; transform: scaleX(0); transition: transform .6s ease; }
   .steps { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--faint); flex-wrap: wrap; }
   .steps li { padding: 5px 10px; border-radius: 99px; border: 1px solid var(--border); }
   .steps li.on { color: var(--text); border-color: var(--accent); }
@@ -253,7 +253,7 @@ function showProgress(p, msg) {
   $('pmsg').textContent = msg;
   const pct = Math.round(p * 100);
   $('ppct').textContent = pct + '%';
-  $('pfill').style.width = pct + '%';
+  $('pfill').style.transform = `scaleX(${pct / 100})`;
   $('pfill').parentElement.setAttribute('aria-valuenow', pct);
   const stage = p < 0.02 ? 0 : p < 0.45 ? 1 : p < 0.65 ? 2 : 3;
   [...$('steps').children].forEach((li, i) => { li.className = i < stage ? 'done' : i === stage ? 'on' : ''; });
