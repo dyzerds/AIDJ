@@ -77,9 +77,43 @@ Your browser opens **http://127.0.0.1:5050**. Next time you only need the `sourc
 3. Pick a transition style and when the songs should change.
 4. Click **Create my mix** and wait. You can watch the progress: downloading, analysing, mixing.
 5. Press play, click any time in the tracklist to jump to that song, or click **Download MP3**.
+6. Want a transition done differently? Leave a comment on it ([see below](#change-a-transition-with-a-comment)).
 
 The first mix of a playlist takes a few minutes, because every song has to be downloaded and analysed.
 Mixing the same playlist again (for example with another style) is much faster, because songs are kept on your computer.
+
+---
+
+## Change a transition with a comment
+
+Not happy with one transition? Every transition in the tracklist has a **Comment** button.
+
+1. Click **Comment** under the transition and write what you want, in plain English.
+2. The AI answers right away with what it understood, for example *"Got it: switch to Spinback; next song 1.5 dB louder."*
+3. Comment on as many transitions as you like, then press **Re-mix with my comments**.
+
+Your comments stay with the mix, so you can keep fine-tuning it. Remove a comment with **×** and re-mix again.
+
+![A comment on a transition](docs/comments.png)
+
+| You can write things like… | What the AI does |
+|---|---|
+| "use an echo", "spinback here", "just crossfade" | Switches to that technique |
+| "no spinback", "not the filter" | Avoids that technique |
+| "longer", "a bit shorter", "16 bars", "10 seconds" | Changes how long both songs play together |
+| "earlier", "start 8 bars later", "cut the outro" | Moves the transition |
+| "in the middle", "let the song finish" | Changes where in the song it happens |
+| "start the next song at the chorus", "skip the intro" | Starts the next song at its drop / chorus |
+| "smoother", "too abrupt" | A longer, softer transition |
+| "punchier", "more energy" | A hard cut right on the beat |
+| "the beats clash", "out of sync" | The songs don't overlap at all |
+| "muddy", "too much bass" | Less overlap, filters instead of a full blend |
+| "next song too loud", "a bit louder" | Changes the volume of the next song |
+| "more echo", "less echo" | A longer or shorter echo tail |
+| "you decide", "reset" | Lets the AI choose again / forgets your comments on that transition |
+
+If the AI doesn't understand a comment, it says so and shows examples. Some wishes are impossible, like a Smooth Blend
+between songs whose tempos are far apart. Then the AI picks the closest option and explains why in the tracklist.
 
 ---
 
@@ -101,6 +135,7 @@ You can delete either folder at any time to free up space. AIDJ re-creates them 
 3. **Listen** – for every song it measures the tempo (BPM), places a beat grid on the drums, finds the first beat of every bar, the musical key, how loud the song is and where its sections (intro, chorus, outro) change.
 4. **Plan** – for every pair of songs it chooses the transition, picks a moment on a phrase boundary (every 4 or 8 bars, like a DJ counts), and works out how much to speed up or slow down the next song so the beats match. Songs are time-stretched without changing their pitch, and they glide back to their own tempo after the blend.
 5. **Mix** – it renders the transitions (EQ bass swap, filter sweeps, tempo-synced echo, vinyl spinback), evens out the volume of all songs, runs a limiter so nothing distorts, and saves one MP3.
+6. **Listen to you** – your comments are turned into changes (technique, length, timing, where the next song starts, volume…) and the mix is planned and rendered again.
 
 Main files:
 
@@ -110,6 +145,7 @@ Main files:
 | `downloader.py` | Reads the Spotify playlist and downloads the songs |
 | `analysis.py` | Tempo, beats, bars, key, loudness and song sections |
 | `mixer.py` | Plans and renders every transition |
+| `comments.py` | Understands your comments on transitions |
 | `static/index.html` | The web page |
 | `selftest.py` | A self-check that needs no internet |
 
@@ -134,7 +170,9 @@ It creates a few test songs, analyses them and makes mixes with every style. It 
 - **Downloads fail** – YouTube changes often. Update the downloader with
   `pip install -U "yt-dlp[default]"` (`start.bat` does this for you).
   Installing [Node.js](https://nodejs.org) or [Deno](https://deno.com) can also help, AIDJ uses them when they are installed.
-- **"Address already in use"** – another program uses port 5050. Close it, or change `PORT` in `app.py`.
+- **"AIDJ is already running"** – AIDJ is already open in another window, so use that one.
+  Just updated AIDJ? Close the old AIDJ window first, then start it again.
+- **"Port 5050 is used by another program"** – close that program, or change `PORT` in `app.py`.
 - **Python not found on Windows** – reinstall Python and tick **"Add python.exe to PATH"**.
 
 ---

@@ -13,6 +13,7 @@
     --radius: 16px;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; }
   body {
     min-height: 100vh; background: var(--bg); color: var(--text);
@@ -98,6 +99,41 @@
   .track .m { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trans { margin: 0 8px 0 44px; padding: 4px 0 4px 16px; border-left: 2px dashed var(--border-2); color: var(--muted); font-size: 13px; }
   .trans b { color: var(--text); font-weight: 600; }
+  .tline { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+  .edited { margin-left: 6px; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .cbtn {
+    flex: none; height: 28px; padding: 0 10px; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 99px;
+    background: transparent; color: var(--muted); border: 1px solid var(--border-2);
+  }
+  .cbtn:hover, .cbtn[aria-expanded=true] { color: var(--text); border-color: var(--accent); }
+  .busy .cbtn, .busy .cmt .x { visibility: hidden; }
+  .cmts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .cmts:not(:empty) { margin-top: 10px; }
+  .cmt { position: relative; padding: 10px 40px 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
+  .cmt.new { border-color: rgba(255, 138, 61, .55); }
+  .cmt .me { margin: 0; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+  .cmt .ai { margin: 4px 0 0; font-size: 13px; }
+  .cmt .ai b { color: var(--accent); }
+  .cmt .tag { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+  .cmt.new .tag { color: var(--accent); }
+  .cmt .x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; background: transparent; color: var(--muted); font-size: 18px; border-radius: 8px; }
+  .cmt .x:hover { background: var(--border); color: var(--text); }
+  .composer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .composer input {
+    flex: 1; min-width: 0; height: 40px; padding: 0 12px; font: inherit; font-size: 14px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; outline: none;
+  }
+  .composer input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 138, 61, .22); }
+  .composer button { height: 40px; padding: 0 14px; font-size: 14px; background: var(--accent); color: var(--accent-ink); }
+  .composer button:disabled { opacity: .5; }
+  .composer .chint { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
+  .composer .chint:empty { display: none; }
+  .remixbar {
+    position: sticky; bottom: 16px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-top: 16px; padding: 10px 10px 10px 16px; background: #22170e; border: 1px solid var(--accent); border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .5); font-size: 14px; font-weight: 600;
+  }
+  .remixbar button { height: 40px; padding: 0 16px; background: var(--accent); color: var(--accent-ink); }
   .muted { color: var(--muted); font-size: 14px; }
   .ghost { margin-top: 18px; height: 44px; padding: 0 16px; background: transparent; color: var(--text); border: 1px solid var(--border-2); }
   .ghost:hover { background: var(--surface-2); }
@@ -110,6 +146,8 @@
     .rtop { flex-direction: column; }
     .track { grid-template-columns: 66px 1fr; }
     .trans { margin-left: 32px; }
+    .tline { flex-direction: column; gap: 8px; }
+    .remixbar { flex-direction: column; align-items: stretch; text-align: center; }
   }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -180,8 +218,13 @@
         Download MP3</a>
     </div>
     <audio id="player" controls preload="metadata"></audio>
+    <p class="muted">Want a transition done differently? Click <b>Comment</b> under it and tell the AI what to change.</p>
     <ol id="tracklist"></ol>
     <p id="skipped" class="muted" hidden></p>
+    <div id="remix" class="remixbar" hidden aria-live="polite">
+      <span id="remixmsg"></span>
+      <button id="remixbtn" type="button">Re-mix with my comments</button>
+    </div>
     <button id="again" class="ghost" type="button">Make another mix</button>
   </section>
 
@@ -192,15 +235,25 @@
 const $ = (id) => document.getElementById(id);
 const form = $('form'), err = $('err'), go = form.querySelector('.go'), player = $('player');
 const SPOTIFY = /(open\.spotify\.com\/(intl-[\w-]+\/)?(embed\/)?|spotify:)(playlist|album)[\/:][A-Za-z0-9]{22}/;
+const CHAT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
+let current = null;   // the mix on screen
+let draft = {};       // transition key -> [{text, reply, applied}]: the comments the next re-mix will use
 
 function fmt(s) {
   s = Math.max(0, Math.round(s));
   const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
 }
 
 function showError(msg) {
@@ -209,7 +262,9 @@ function showError(msg) {
 
 function setBusy(busy) {
   go.disabled = busy;
+  $('remixbtn').disabled = busy;
   go.textContent = busy ? 'Mixing…' : 'Create my mix';
+  document.body.classList.toggle('busy', busy);
   document.body.classList.toggle('live', busy || !player.paused);
 }
 
@@ -221,7 +276,7 @@ for (const name of ['style', 'position']) {
   if (input) input.checked = true;
 }
 
-form.addEventListener('submit', async (e) => {
+form.addEventListener('submit', (e) => {
   e.preventDefault();
   showError('');
   const url = $('url').value.trim();
@@ -232,21 +287,27 @@ form.addEventListener('submit', async (e) => {
   }
   const style = form.elements.style.value, position = form.elements.position.value;
   store.set('aidj-url', url); store.set('aidj-style', style); store.set('aidj-position', position);
+  startJob({ url, style, position }, false);
+});
+
+// keep = true for a re-mix: the current mix stays on screen while the new one is made.
+async function startJob(body, keep) {
+  showError('');
   setBusy(true);
   try {
     const res = await fetch('/api/mix', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, style, position }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Could not start the mix.');
-    store.set('aidj-job', data.id);
-    watch(data.id);
+    store.set('aidj-job', JSON.stringify({ id: data.id, keep }));
+    watch(data.id, keep);
   } catch (ex) {
     setBusy(false);
-    showError(ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message);
+    const msg = ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message;
+    if (keep) $('remixmsg').textContent = msg; else showError(msg);
   }
-});
+}
 
 function showProgress(p, msg) {
   $('progress').hidden = false;
@@ -259,34 +320,152 @@ function showProgress(p, msg) {
   [...$('steps').children].forEach((li, i) => { li.className = i < stage ? 'done' : i === stage ? 'on' : ''; });
 }
 
-async function watch(id) {
+async function watch(id, keep) {
   setBusy(true);
-  $('result').hidden = true;
+  if (!keep) $('result').hidden = true;
   showProgress(0, 'Starting…');
-  let misses = 0;
+  if (keep) $('progress').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  let misses = 0, failed = '';
   while (true) {
     let job;
     try {
       const res = await fetch('/api/jobs/' + id);
-      if (res.status === 404) { showError('AIDJ was restarted, so that mix stopped. Please start it again.'); break; }
+      if (res.status === 404) { failed = 'AIDJ was restarted, so that mix stopped. Please start it again.'; break; }
       job = await res.json();
       misses = 0;
     } catch {
-      if (++misses > 10) { showError('Lost connection to AIDJ. Is the app still running?'); break; }
+      if (++misses > 10) { failed = 'Lost connection to AIDJ. Is the app still running?'; break; }
     }
     if (job) {
       showProgress(job.progress, job.message);
       if (job.state === 'done') { store.set('aidj-result', JSON.stringify(job.result)); showResult(job.result, true); break; }
-      if (job.state === 'error') { showError(job.message); break; }
+      if (job.state === 'error') { failed = job.message; break; }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
   store.set('aidj-job', null);
   $('progress').hidden = true;
   setBusy(false);
+  if (failed && keep && current) $('remixmsg').textContent = failed;
+  else if (failed) showError(failed);
 }
 
+// ---- comments on transitions
+const appliedTexts = (key) => ((current.transitions.find((t) => t.key === key) || {}).comments || []).map((c) => c.text);
+const draftTexts = (key) => (draft[key] || []).map((c) => c.text);
+
+function loadDraft(r) {
+  draft = {};
+  for (const t of r.transitions) {
+    if (t.key && t.comments && t.comments.length) draft[t.key] = t.comments.map((c) => ({ ...c, applied: true }));
+  }
+  try {
+    const saved = JSON.parse(store.get('aidj-draft'));
+    if (saved && saved.file === r.file && saved.draft) draft = saved.draft;
+  } catch {}
+}
+
+function saveDraft() {
+  store.set('aidj-draft', JSON.stringify({ file: current.file, draft }));
+}
+
+function updateBar() {
+  const keys = new Set([...Object.keys(draft), ...current.transitions.map((t) => t.key).filter(Boolean)]);
+  const changed = [...keys].filter((k) => JSON.stringify(draftTexts(k)) !== JSON.stringify(appliedTexts(k))).length;
+  $('remix').hidden = !changed || !current.request;
+  $('remixmsg').textContent = changed === 1 ? 'Your comment on 1 transition is ready.' : `Your comments on ${changed} transitions are ready.`;
+}
+
+function renderComments(key, ul) {
+  ul.replaceChildren(...(draft[key] || []).map((c, i) => {
+    const li = el('li', 'cmt' + (c.applied ? '' : ' new'));
+    const ai = el('p', 'ai');
+    ai.append(el('b', '', 'AI: '), c.reply);
+    const x = el('button', 'x', '×');
+    x.type = 'button';
+    x.setAttribute('aria-label', 'Remove this comment');
+    x.onclick = () => {
+      draft[key].splice(i, 1);
+      if (!draft[key].length) delete draft[key];
+      saveDraft(); renderComments(key, ul); updateBar();
+    };
+    li.append(el('p', 'me', c.text), ai, el('span', 'tag', c.applied ? 'In this mix' : 'Waiting for re-mix'), x);
+    return li;
+  }));
+}
+
+async function sendComment(key, input, send, hint, ul, close) {
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  send.disabled = true;
+  hint.textContent = 'The AI is reading your comment…';
+  try {
+    const res = await fetch('/api/interpret', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not read that comment.');
+    if (!data.ok) { hint.textContent = data.reply; return; }   // not understood: keep the text to rephrase
+    (draft[key] ||= []).push({ text, reply: data.reply, ok: true, applied: false });
+    input.value = '';
+    hint.textContent = '';
+    saveDraft(); renderComments(key, ul); updateBar(); close();
+  } catch (ex) {
+    hint.textContent = ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message;
+  } finally {
+    send.disabled = false;
+  }
+}
+
+function transitionItem(tr, next) {
+  const li = el('li', 'trans');
+  const line = el('div', 'tline');
+  const text = el('span');
+  text.append(el('b', '', tr.name + (tr.bars ? ` · ${tr.bars} bars` : '')), ' — ' + tr.why);
+  if (tr.edited) text.append(el('span', 'edited', 'edited'));
+  line.append(text);
+  li.append(line);
+  if (!tr.key) return li;   // mixes made before comments existed
+  const btn = el('button', 'cbtn');
+  btn.type = 'button';
+  btn.innerHTML = CHAT + 'Comment';
+  btn.setAttribute('aria-expanded', 'false');
+  const ul = el('ul', 'cmts');
+  const composer = el('form', 'composer');
+  composer.hidden = true;
+  const input = el('input');
+  input.type = 'text';
+  input.maxLength = 300;
+  input.placeholder = 'e.g. longer, start at the chorus';
+  input.setAttribute('aria-label', `Comment on the transition into ${next}`);
+  const send = el('button', '', 'Send');
+  send.type = 'submit';
+  const hint = el('p', 'chint');
+  hint.setAttribute('aria-live', 'polite');
+  composer.append(input, send, hint);
+  const toggle = () => {
+    composer.hidden = !composer.hidden;
+    btn.setAttribute('aria-expanded', String(!composer.hidden));
+    if (!composer.hidden) input.focus();
+  };
+  btn.onclick = toggle;
+  input.onkeydown = (e) => { if (e.key === 'Escape') toggle(); };
+  composer.onsubmit = (e) => { e.preventDefault(); sendComment(tr.key, input, send, hint, ul, toggle); };
+  line.append(btn);
+  li.append(ul, composer);
+  renderComments(tr.key, ul);
+  return li;
+}
+
+$('remixbtn').addEventListener('click', () => {
+  const comments = {};
+  for (const [key, list] of Object.entries(draft)) if (list.length) comments[key] = list.map((c) => c.text);
+  startJob({ ...current.request, comments }, true);
+});
+
 function showResult(r, scroll) {
+  current = r;
+  loadDraft(r);
   $('rname').textContent = r.name;
   player.src = r.file;
   $('dl').href = r.file;
@@ -294,43 +473,32 @@ function showResult(r, scroll) {
   const list = $('tracklist');
   list.replaceChildren();
   r.tracks.forEach((t, i) => {
-    const li = document.createElement('li');
-    li.className = 'track';
+    const li = el('li', 'track');
     li.dataset.time = t.time;
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'time'; btn.textContent = fmt(t.time);
+    const btn = el('button', 'time', fmt(t.time));
+    btn.type = 'button';
     btn.setAttribute('aria-label', `Play from ${fmt(t.time)}: ${t.title}`);
     btn.onclick = () => { player.currentTime = t.time; player.play(); };
-    const info = document.createElement('div');
+    const info = el('div');
     info.style.minWidth = '0';
-    const title = document.createElement('div'); title.className = 't'; title.textContent = `${i + 1}. ${t.title}`;
-    const meta = document.createElement('div'); meta.className = 'm';
-    meta.textContent = [t.artist, `${t.bpm} BPM`, t.key].filter(Boolean).join(' · ');
-    info.append(title, meta);
+    info.append(el('div', 't', `${i + 1}. ${t.title}`), el('div', 'm', [t.artist, `${t.bpm} BPM`, t.key].filter(Boolean).join(' · ')));
     li.append(btn, info);
     list.append(li);
-    const tr = r.transitions[i];
-    if (tr) {
-      const note = document.createElement('li');
-      note.className = 'trans';
-      const b = document.createElement('b');
-      b.textContent = tr.name + (tr.bars ? ` · ${tr.bars} bars` : '');
-      note.append(b, ' — ' + tr.why);
-      list.append(note);
-    }
+    if (r.transitions[i]) list.append(transitionItem(r.transitions[i], r.tracks[i + 1].title));
   });
   const sk = $('skipped');
   sk.hidden = !r.skipped.length;
   sk.textContent = r.skipped.length ? `Not found, so left out: ${r.skipped.map((t) => t.title).join(', ')}` : '';
+  updateBar();
   $('result').hidden = false;
   if (scroll) $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 player.addEventListener('timeupdate', () => {
   const rows = [...document.querySelectorAll('.track')];
-  let current = null;
-  for (const row of rows) if (player.currentTime + 0.25 >= Number(row.dataset.time)) current = row;
-  rows.forEach((row) => row.classList.toggle('now', row === current));
+  let now = null;
+  for (const row of rows) if (player.currentTime + 0.25 >= Number(row.dataset.time)) now = row;
+  rows.forEach((row) => row.classList.toggle('now', row === now));
 });
 for (const ev of ['play', 'pause', 'ended']) player.addEventListener(ev, () => document.body.classList.toggle('live', !player.paused || go.disabled));
 
@@ -341,11 +509,14 @@ $('again').addEventListener('click', () => {
   $('url').focus();
 });
 
-// After a reload: keep following a running mix, or show the last finished one again.
-const running = store.get('aidj-job');
-if (running) watch(running);
-else {
-  try { const last = JSON.parse(store.get('aidj-result')); if (last) showResult(last, false); } catch {}
+// After a reload: show the last mix again, and keep following a mix that is still being made.
+try { const last = JSON.parse(store.get('aidj-result')); if (last) showResult(last, false); } catch {}
+const raw = store.get('aidj-job');
+if (raw) {
+  let job = null;
+  try { job = JSON.parse(raw); } catch {}
+  if (!job || !job.id) job = { id: raw, keep: false };
+  watch(job.id, job.keep && !!current);
 }
 </script>
 </body>

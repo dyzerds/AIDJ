@@ -84,6 +84,16 @@ class Deck:
         a, b = self.bar_db[max(0, j - 4):j], self.bar_db[j:j + 4]
         return float(a.mean() - b.mean()) if len(a) and len(b) else 0.0
 
+    def drop_bar(self):
+        """First bar where the song really kicks in (its drop or chorus), preferring a section line."""
+        db, last = self.bar_db, max(self.in_bar + 5, self.end_bar - 8)
+        for j in range(self.in_bar + 4, last):
+            if db[j:j + 4].mean() >= -3 and db[j:j + 4].mean() - db[j - 4:j].mean() >= 2:
+                near = [k for k in self.bounds if abs(k - j) <= 2]
+                return min(near, key=lambda k: abs(k - j)) if near else j
+        loud = [j for j in range(self.in_bar + 4, last) if db[j:j + 4].mean() >= -2]
+        return loud[0] if loud else self.in_bar
+
 
 def _camelot_distance(a, b):
     na, nb = int(a[:-1]), int(b[:-1])
@@ -97,49 +107,76 @@ def _match(pa, pb):
     return 1.0 if abs(s - 1) < 2e-4 else s   # same tempo: no stretching needed
 
 
-def _choose(A, B, style, prev):
-    """Pick the transition technique. Returns (kind, reason)."""
-    s = _match(A.beat_len(A.bar_time(A.end_bar)), B.beat_len(B.bar_time(B.in_bar) + 4))
-    gap = abs(s - 1)
+def _choose(A, B, style, prev, ov):
+    """Pick the transition technique (listener comments in ov come first). Returns (kind, reason)."""
+    gap = abs(_match(A.beat_len(A.bar_time(A.end_bar)), B.beat_len(B.bar_time(B.in_bar) + 4)) - 1)
     beat_ok = A.rhythmic and B.rhythmic
+    matchable = beat_ok and gap <= MAX_STRETCH
     key_ok = _camelot_distance(A.an['camelot'], B.an['camelot']) <= 1
     tempo = f"{A.an['bpm']:.0f} → {B.an['bpm']:.0f} BPM"
-    if style in ('blend', 'filter'):
-        if not beat_ok:
-            return 'fade', 'no steady beat to match, so a smooth crossfade instead'
-        if gap > MAX_STRETCH:
-            return 'echo', f'tempos too far apart to blend ({tempo}), so an echo out instead'
-        return style, f'beat-matched ({tempo})'
-    if style != 'auto':
-        return style, tempo
-    if not beat_ok:
-        return 'fade', 'no steady beat, smooth crossfade'
     keys = f"{A.an['camelot']} → {B.an['camelot']}"
-    if gap <= 0.06 and (key_ok or prev == 'filter'):
-        return 'blend', f'tempos match ({tempo}), keys {"match" if key_ok else "differ, so a shorter blend"} ({keys})'
-    if gap <= 0.06:
-        return 'filter', f'tempos match ({tempo}) but keys clash ({keys}), filters keep it clean'
-    if B.bar_db[B.in_bar:B.in_bar + 2].mean() > -4 and prev != 'cut':
-        return 'cut', f'tempo jump ({tempo}) and the next song starts strong'
-    if prev != 'echo':
-        return 'echo', f'tempo jump ({tempo})'
-    return 'spin', f'tempo jump ({tempo}), mixing it up'
+    avoid = set(ov.get('avoid', ())) | ({'blend', 'filter', 'fade'} if ov.get('sync') else set())
+    mood = ov.get('mood')
+    want = ov.get('kind') or {'smooth': 'blend' if matchable else 'echo', 'punchy': 'cut',
+                              'clean': 'filter' if matchable else None}.get(mood)
+    want = want or (style if style != 'auto' else None)
+    if want and want not in avoid:
+        if want in ('blend', 'filter') and not matchable:
+            order = ('echo', 'cut', 'spin', 'fade') if beat_ok else ('fade', 'echo', 'cut', 'spin')
+            kind = next((k for k in order if k not in avoid), 'cut')
+            reason = 'no steady beat to match' if not beat_ok else f'tempos too far apart to blend ({tempo})'
+            return kind, f'{reason}, so {NAMES[kind]} instead'
+        return want, f'beat-matched ({tempo})' if want in ('blend', 'filter') else tempo
+    # Auto: rank the techniques for this pair and skip any the listener ruled out.
+    if not beat_ok:
+        ranked = [('fade', 'no steady beat, smooth crossfade'), ('echo', tempo), ('cut', tempo)]
+    else:
+        ranked = []
+        if gap <= 0.06:
+            blend = ('blend', f'tempos match ({tempo}), keys {"match" if key_ok else "differ, so a shorter blend"} ({keys})')
+            filt = ('filter', f'tempos match ({tempo}) but keys clash ({keys}), filters keep it clean')
+            ranked += [blend, filt] if key_ok or prev == 'filter' else [filt, blend]
+        strong = B.bar_db[B.in_bar:B.in_bar + 2].mean() > -4
+        if gap <= 0.06:   # tempos would blend, so the listener asked for no overlap
+            jumps = dict.fromkeys(('cut', 'echo', 'spin'), f'no overlap, as you asked ({tempo})')
+        else:
+            jumps = {'cut': f'tempo jump ({tempo}) and the next song starts strong' if strong else f'tempo jump ({tempo})',
+                     'echo': f'tempo jump ({tempo})', 'spin': f'tempo jump ({tempo}), mixing it up'}
+        order = ['cut', 'echo', 'spin'] if strong and prev != 'cut' else (
+            ['echo', 'spin', 'cut'] if prev != 'echo' else ['spin', 'cut', 'echo'])
+        ranked += [(k, jumps[k]) for k in order] + [('fade', 'smooth crossfade')]
+    return next(((k, why) for k, why in ranked if k not in avoid), ('cut', tempo))
 
 
-def _length(kind, position, A, B):
-    """Transition length in bars."""
+def _to_bars(value, unit, beat):
+    """Comment amounts ("8 bars", "10 seconds", "4 beats") in whole bars."""
+    bars = value if unit == 'bars' else value / 4 if unit == 'beats' else value / (4 * beat)
+    return int(round(bars)) or (1 if value > 0 else -1 if value < 0 else 0)
+
+
+def _length(kind, position, A, B, ov):
+    """Transition length in bars (0 for the techniques that don't overlap the songs)."""
+    if kind not in ('blend', 'filter', 'fade'):
+        return 0
+    beat = A.beat_len(A.bar_time(A.end_bar))
     if kind == 'blend':
         key_ok = _camelot_distance(A.an['camelot'], B.an['camelot']) <= 1
-        long = position == 'end' and key_ok and A.an['steady'] and B.an['steady']
-        return 16 if long else 8
-    if kind == 'filter':
-        return 8
-    if kind == 'fade':
-        return max(2, round(8 / (4 * A.beat_len(A.bar_time(A.end_bar)))))
-    return 0
+        bars = 16 if position == 'end' and key_ok and A.an['steady'] and B.an['steady'] else 8
+    else:
+        bars = 8 if kind == 'filter' else max(2, round(8 / (4 * beat)))
+    if ov.get('mood') == 'smooth' and 'length' not in ov:
+        bars *= 2
+    if ov.get('mood') == 'clean':
+        bars -= 4
+    for op, *args in ov.get('length', []):
+        if op == 'mul':   # "longer" / "shorter": keep whole 4-bar phrases
+            bars = max(4, round(bars * args[0] / 4) * 4)
+        else:
+            bars = (bars if op == 'add' else 0) + _to_bars(args[0], args[1], beat)
+    return int(min(32, max(2, bars)))
 
 
-def _exit_bars(A, kind, over, position):
+def _exit_bars(A, kind, over, position, shift=0):
     """Choose the bar where the transition starts in the outgoing song (on a phrase line)."""
     max_bar = max(A.in_bar, A.bar_at(A.an['end'] - 0.3) - 1 - over)   # leave before the music stops
     lo = min(A.bar_at(A.p1) + 4, max_bar)
@@ -163,7 +200,7 @@ def _exit_bars(A, kind, over, position):
             s += 0.3 * np.clip(A.drop(j), 0, 6)
         return s - (0.25 if position == 'end' else 0.1) * abs(j - target)
 
-    j = max(starts, key=score)
+    j = min(max(max(starts, key=score) + shift, lo), max_bar)   # shift: "earlier" / "later" comments
     return j, j + over
 
 
@@ -178,31 +215,43 @@ def _settle(d, exit_src):
     d.ramp = (d.p1, d.p1 + min(want, room)) if room >= 3 * bar else None
 
 
-def plan(decks, style='auto', position='end'):
-    """Decide every transition. Returns notes for the tracklist."""
+def plan(decks, style='auto', position='end', overrides=None):
+    """Decide every transition. overrides[i] holds the listener's comments (see comments.merge) for the
+    transition from decks[i] to decks[i + 1]. Returns notes for the tracklist."""
     notes, prev = [], None
-    for A, B in zip(decks, decks[1:]):
-        kind, why = _choose(A, B, style, prev)
-        over = min(_length(kind, position, A, B), max(0, A.bar_at(A.an['end'] - 0.3) - A.bar_at(A.p1) - 2))
+    for i, (A, B) in enumerate(zip(decks, decks[1:])):
+        ov = (overrides[i] if overrides and i < len(overrides) else None) or {}
+        pos = ov.get('position', position)
+        if ov.get('enter') == 'drop':
+            B.in_bar = B.drop_bar()
+        B.gain *= 10 ** (ov.get('volume', 0) / 20)
+        kind, why = _choose(A, B, style, prev, ov)
+        over = min(_length(kind, pos, A, B, ov), max(0, A.bar_at(A.an['end'] - 0.3) - A.bar_at(A.p1) - 2))
         if over < 2 and kind in ('blend', 'filter', 'fade'):
             kind, why, over = 'cut', 'song too short to blend', 0
-        j_out, j_end = _exit_bars(A, kind, over, position)
+        beat = A.beat_len(A.bar_time(A.end_bar))
+        shift = sum(_to_bars(v, unit, beat) for v, unit in ov.get('shift', []))
+        j_out, j_end = _exit_bars(A, kind, over, pos, shift)
         _settle(A, A.bar_time(j_out))
         sA = float(A.speed(A.bar_time(j_out)))
         pa = A.beat_len(A.bar_time(j_out)) / sA          # beat length in the mix (s)
         B.p1 = B.bar_time(B.in_bar)
-        if kind in ('blend', 'filter'):
+        if kind in ('blend', 'filter') or (kind == 'fade' and A.rhythmic and B.rhythmic):
             B.s0 = _match(pa, B.beat_len(B.p1 + 4))
-            if abs(B.s0 - 1) > MAX_STRETCH:              # A could not glide back in time: fall back
-                kind, why, B.s0 = 'echo', 'tempos too far apart to blend, so an echo out instead', 1.0
-                over = 0
-                j_out, j_end = _exit_bars(A, kind, over, position)
-                _settle(A, A.bar_time(j_out))
+            if abs(B.s0 - 1) > MAX_STRETCH:
+                B.s0 = 1.0
+                if kind != 'fade':                       # A could not glide back in time: fall back
+                    kind = next((k for k in ('echo', 'cut', 'spin') if k not in ov.get('avoid', ())), 'cut')
+                    why, over = f'tempos too far apart to blend, so {NAMES[kind]} instead', 0
+                    j_out, j_end = _exit_bars(A, kind, over, pos, shift)
+                    _settle(A, A.bar_time(j_out))
         t_out = A.out_time(A.bar_time(j_out))
         dur = A.out_time(A.bar_time(j_end)) - t_out
-        A.exit = {'kind': kind, 't': t_out, 'dur': dur, 'beat': pa, 'bars': over}
+        A.exit = {'kind': kind, 't': t_out, 'dur': dur, 'beat': pa, 'bars': over,
+                  'echo': ov.get('echo') or ('long' if ov.get('mood') == 'smooth' else 'normal')}
         A.src_end = A.bar_time(j_end) + 0.05
-        B.entry = {'kind': kind, 'dur': dur, 'bars': over}
+        B.entry = {'kind': kind, 'dur': dur, 'bars': over, 'beat': pa,
+                   'soft': ov.get('mood') == 'smooth' and kind in ('echo', 'cut', 'spin')}
         if kind in ('blend', 'filter', 'fade'):
             B.src_in = B.p1
             B.p1 = B.src_in + dur * B.s0                 # where the overlap ends in B
@@ -213,7 +262,7 @@ def plan(decks, style='auto', position='end'):
             if kind == 'spin':
                 A.exit['spin'] = max(2, round(1.4 / pa)) * pa
                 B.lead += A.exit['spin']
-        notes.append({'kind': kind, 'name': NAMES[kind], 'bars': over, 'why': why})
+        notes.append({'kind': kind, 'name': NAMES[kind], 'bars': over, 'why': why, 'edited': bool(ov)})
         prev = kind
     last = decks[-1]
     _settle(last, last.an['duration'])
@@ -309,15 +358,16 @@ def _exit_curve(kind, bars):
         np.cos(0.5 * np.pi * np.clip((u - 0.7) / 0.3, 0, 1)))
 
 
-def _echo(y, d, beat):
+def _echo(y, d, beat, size='normal'):
     """Tempo-synced echo of the two beats before sample d: filtered feedback, ping-pong, some reverb."""
     s = max(0, d - int(2 * beat * SR))
     send = _filt(y[:, s:d] * np.linspace(0, 1, d - s, dtype=np.float32) ** 2, hp=300, lp=9000)
-    delay, reps = int(0.75 * beat * SR), 9
+    step, reps, feedback = {'short': (0.5, 5, 0.45), 'normal': (0.75, 9, 0.6), 'long': (0.75, 14, 0.7)}[size]
+    delay = int(step * beat * SR)
     wet = np.zeros((2, d - s + delay * reps + 2 * SR), np.float32)
     r = send
     for k in range(1, reps + 1):
-        r = _filt(r, hp=400, lp=max(1500, 8000 * 0.8 ** k)) * 0.6
+        r = _filt(r, hp=400, lp=max(1500, 8000 * 0.8 ** k)) * feedback
         pan = np.array([[1 - 0.3 * (-1) ** k], [1 + 0.3 * (-1) ** k]], np.float32)
         wet[:, k * delay:k * delay + r.shape[1]] += r * pan
     verb = pedalboard.Reverb(room_size=0.6, damping=0.5, wet_level=0.25, dry_level=0.85, width=1.0)
@@ -361,6 +411,9 @@ def _apply_entry(y, e):
         n = min(y.shape[1], int(e['dur'] * SR))
         y[:, :n] *= np.sin(0.5 * np.pi * np.linspace(0, 1, n, dtype=np.float32))
         return y
+    if e.get('soft'):   # "smoother" without blending: fade in over a bar while a low-pass opens up
+        return _automate(y, 0, 4 * e['beat'], lambda u: (lambda v: dict(low=v, mid=v, high=v, lp=400 * 250 ** u, res=0.3))(
+            np.sin(0.5 * np.pi * u)))
     return _fade(y, 0, int(0.004 * SR), True)
 
 
@@ -384,7 +437,7 @@ def _apply_exit(y, x):
     if k == 'echo':
         beat = x['beat']
         y = _automate(y, t - 2 * beat, 2 * beat, lambda u: dict(low=1, mid=1, high=1, hp=5 * (500 / 5) ** u, res=0.4))
-        wet, s = _echo(y, a, beat)
+        wet, s = _echo(y, a, beat, x.get('echo', 'normal'))
         y = _fade(y[:, :a + int(0.01 * SR)], a, int(0.01 * SR), False)
         y = np.pad(y, ((0, 0), (0, max(0, s + wet.shape[1] - y.shape[1]))))
         y[:, s:s + wet.shape[1]] += wet

@@ -4,6 +4,7 @@ Run:  python app.py   then open http://127.0.0.1:5050
 """
 import logging
 import re
+import socket
 import sys
 import threading
 import traceback
@@ -16,6 +17,7 @@ import requests
 from flask import Flask, jsonify, request, send_from_directory
 
 import analysis
+import comments
 import downloader
 import mixer
 
@@ -51,8 +53,19 @@ def start_mix():
                              "It should look like https://open.spotify.com/playlist/..."), 400
     jid = uuid.uuid4().hex[:12]
     jobs[jid] = {'state': 'queued', 'progress': 0, 'message': 'Waiting for the previous mix to finish…'}
-    worker.submit(run_job, jid, url, style, position)
+    worker.submit(run_job, jid, url, style, position, _clean_comments(data.get('comments')))
     return jsonify(id=jid)
+
+
+@app.post('/api/interpret')
+def interpret_comment():
+    """Tell the listener right away what the AI understood from a comment (applied on the next re-mix)."""
+    data = request.get_json(silent=True)
+    text = data.get('text') if isinstance(data, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        return jsonify(error='Write a comment first.'), 400
+    _, said = comments.interpret(text.strip()[:300])
+    return jsonify(ok=bool(said), reply=comments.reply(said))
 
 
 @app.get('/api/jobs/<jid>')
@@ -70,7 +83,20 @@ def _slug(text):
     return re.sub(r'[^A-Za-z0-9]+', '-', text).strip('-')[:40] or 'mix'
 
 
-def run_job(jid, url, style, position):
+def _clean_comments(raw):
+    """{'fromTrackId>toTrackId': ['comment', ...]} from the browser, trimmed to sane sizes."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key, texts in list(raw.items())[:200]:
+        if isinstance(key, str) and isinstance(texts, list):
+            texts = [t.strip()[:300] for t in texts if isinstance(t, str) and t.strip()][:10]
+            if texts:
+                out[key[:100]] = texts
+    return out
+
+
+def run_job(jid, url, style, position, feedback):
     job = jobs[jid]
 
     def step(progress, message):
@@ -96,8 +122,12 @@ def run_job(jid, url, style, position):
         if not decks:
             raise RuntimeError('None of the songs could be found on YouTube Music, so there is nothing to mix.')
 
-        step(0.65, 'Planning the transitions…')
-        notes = mixer.plan(decks, style, position)
+        step(0.65, 'Planning the transitions with your comments…' if feedback else 'Planning the transitions…')
+        keys = [f"{a.meta['id']}>{b.meta['id']}" for a, b in zip(decks, decks[1:])]
+        merged = [comments.merge(feedback.get(key, [])) for key in keys]
+        notes = mixer.plan(decks, style, position, [changes for changes, _ in merged])
+        for note, key, (_, said) in zip(notes, keys, merged):
+            note.update(key=key, comments=said)
         MIXES.mkdir(exist_ok=True)
         fname = f'{_slug(name)}-{style}-{position}-{jid[:6]}.mp3'
         times = mixer.render(decks, MIXES / fname, lambda i, n, title: step(
@@ -107,9 +137,10 @@ def run_job(jid, url, style, position):
             'name': name,
             'file': f'/mixes/{fname}',
             'download_name': f'{name} (AIDJ mix).mp3',
-            'tracks': [{'title': d.meta['title'], 'artist': d.meta['artist'], 'time': round(t, 2),
+            'tracks': [{'id': d.meta['id'], 'title': d.meta['title'], 'artist': d.meta['artist'], 'time': round(t, 2),
                         'bpm': round(d.an['bpm']), 'key': d.an['camelot']} for d, t in zip(decks, times)],
             'transitions': notes,
+            'request': {'url': url, 'style': style, 'position': position},
             'skipped': [{'title': t['title'], 'artist': t['artist']} for t in skipped],
         })
     except requests.ConnectionError:
@@ -122,8 +153,29 @@ def run_job(jid, url, style, position):
         job.update(state='error', message=f'Something went wrong while mixing: {e}')
 
 
+def _port_owner():
+    """None if the port is free, 'aidj' if AIDJ already runs there, 'other' for another program.
+    (On Windows a second server could silently share the port, so check before starting.)"""
+    with socket.socket() as s:
+        if s.connect_ex(('127.0.0.1', PORT)):
+            return None
+    try:
+        return 'aidj' if requests.get(f'http://127.0.0.1:{PORT}/api/jobs/-', timeout=3).json().get('error') == 'Unknown job' else 'other'
+    except (requests.RequestException, ValueError, AttributeError):
+        return 'other'
+
+
 if __name__ == '__main__':
-    print(f'AIDJ is running at http://127.0.0.1:{PORT}  (press Ctrl+C to stop)')
+    url = f'http://127.0.0.1:{PORT}'
+    owner = _port_owner()
+    if owner == 'other':
+        sys.exit(f'Port {PORT} is used by another program. Close it, or change PORT in app.py.')
+    if owner == 'aidj':
+        print(f'AIDJ is already running at {url}, so this window is not needed. '
+              f'(Just updated AIDJ? Close the other AIDJ window first, then start it again.)')
+    else:
+        print(f'AIDJ is running at {url}  (press Ctrl+C to stop)')
     if '--no-browser' not in sys.argv:
-        threading.Timer(1.5, lambda: webbrowser.open(f'http://127.0.0.1:{PORT}')).start()
-    app.run(host='127.0.0.1', port=PORT, threaded=True)
+        threading.Timer(1.5 if owner is None else 0, lambda: webbrowser.open(url)).start()
+    if owner is None:
+        app.run(host='127.0.0.1', port=PORT, threaded=True)
