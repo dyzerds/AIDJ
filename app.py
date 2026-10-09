@@ -24,6 +24,9 @@ import mixer
 ROOT = Path(__file__).parent
 MIXES = ROOT / 'mixes'
 PORT = 5050
+# The web page is also published on GitHub Pages. Let that page (and only that page) talk to this app.
+# A fork published under another account adds its own https://<name>.github.io address here.
+PAGES_ORIGINS = {'https://dyzerds.github.io'}
 
 # Song titles can contain any character; never let the console's code page crash a mix.
 for stream in (sys.stdout, sys.stderr):
@@ -37,7 +40,18 @@ worker = ThreadPoolExecutor(1)   # one mix at a time; extra requests wait in lin
 
 @app.get('/')
 def index():
-    return send_from_directory(ROOT / 'static', 'index.html')
+    return send_from_directory(ROOT, 'index.html')
+
+
+@app.after_request
+def allow_pages(response):
+    origin = request.headers.get('Origin')
+    if origin in PAGES_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Private-Network'] = 'true'   # a public site calling 127.0.0.1
+        response.vary.add('Origin')
+    return response
 
 
 @app.post('/api/mix')
@@ -76,7 +90,9 @@ def job_status(jid):
 
 @app.get('/mixes/<path:name>')
 def mix_file(name):
-    return send_from_directory(MIXES, name)
+    # ?download=<name> saves the file: the page's download attribute is ignored when it runs on GitHub Pages.
+    download = request.args.get('download')
+    return send_from_directory(MIXES, name, as_attachment=bool(download), download_name=download or None)
 
 
 def _slug(text):

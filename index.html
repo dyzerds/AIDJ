@@ -137,6 +137,9 @@
   .muted { color: var(--muted); font-size: 14px; }
   .ghost { margin-top: 18px; height: 44px; padding: 0 16px; background: transparent; color: var(--text); border: 1px solid var(--border-2); }
   .ghost:hover { background: var(--surface-2); }
+  .setup { border-color: var(--accent); }
+  .setup ol { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+  .setup a { color: var(--accent); }
   footer { color: var(--faint); font-size: 13px; text-align: center; margin-top: 28px; }
 
   @media (max-width: 600px) {
@@ -158,6 +161,21 @@
     <div class="logo"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>AIDJ</div>
     <p class="tag">Paste a Spotify playlist. Get one seamless DJ mix.</p>
   </header>
+
+  <section id="setup" class="card setup" hidden>
+    <p class="eyebrow">Start AIDJ first</p>
+    <h2>The mixing happens on your computer</h2>
+    <p class="muted">This page is the remote control. Downloading, analysing and mixing the songs is done by the AIDJ app
+      on your own computer, and it isn't running yet.</p>
+    <ol class="muted">
+      <li><a href="https://github.com/dyzerds/AIDJ/archive/refs/heads/main.zip">Download AIDJ</a> and unzip it.</li>
+      <li>Windows: double-click <b>start.bat</b>. macOS / Linux: follow the
+        <a href="https://github.com/dyzerds/AIDJ#macos--linux">steps in the README</a>.</li>
+      <li>Keep its window open, then press <b>Check again</b>. If your browser asks whether this site may access apps
+        on your device, allow it.</li>
+    </ol>
+    <button id="recheck" class="ghost" type="button">Check again</button>
+  </section>
 
   <form id="form" class="card" novalidate>
     <label class="field" for="url">Spotify playlist link</label>
@@ -240,6 +258,10 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
+// Served by AIDJ itself, the app is on the same address. Anywhere else (GitHub Pages) the page
+// talks to the AIDJ app running on this computer.
+const API = ['127.0.0.1', 'localhost'].includes(location.hostname) ? '' : 'http://127.0.0.1:5050';
+const OFFLINE = 'Cannot reach AIDJ. Is the app still running?';
 let current = null;   // the mix on screen
 let draft = {};       // transition key -> [{text, reply, applied}]: the comments the next re-mix will use
 
@@ -259,6 +281,21 @@ function el(tag, cls, text) {
 function showError(msg) {
   err.textContent = msg; err.hidden = !msg;
 }
+
+// Show how to start the app when this page can't reach it.
+async function checkApp() {
+  if (!API) return true;
+  let ok = false;
+  try { ok = (await fetch(API + '/api/jobs/-')).status === 404; } catch {}
+  $('setup').hidden = ok;
+  return ok;
+}
+$('recheck').addEventListener('click', async () => {
+  $('recheck').disabled = true;
+  if (await checkApp()) showError('');
+  else showError(OFFLINE);
+  $('recheck').disabled = false;
+});
 
 function setBusy(busy) {
   go.disabled = busy;
@@ -295,7 +332,7 @@ async function startJob(body, keep) {
   showError('');
   setBusy(true);
   try {
-    const res = await fetch('/api/mix', {
+    const res = await fetch(API + '/api/mix', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const data = await res.json();
@@ -304,7 +341,8 @@ async function startJob(body, keep) {
     watch(data.id, keep);
   } catch (ex) {
     setBusy(false);
-    const msg = ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message;
+    const msg = ex instanceof TypeError ? OFFLINE : ex.message;
+    if (ex instanceof TypeError) checkApp();
     if (keep) $('remixmsg').textContent = msg; else showError(msg);
   }
 }
@@ -329,7 +367,7 @@ async function watch(id, keep) {
   while (true) {
     let job;
     try {
-      const res = await fetch('/api/jobs/' + id);
+      const res = await fetch(API + '/api/jobs/' + id);
       if (res.status === 404) { failed = 'AIDJ was restarted, so that mix stopped. Please start it again.'; break; }
       job = await res.json();
       misses = 0;
@@ -400,7 +438,7 @@ async function sendComment(key, input, send, hint, ul, close) {
   send.disabled = true;
   hint.textContent = 'The AI is reading your comment…';
   try {
-    const res = await fetch('/api/interpret', {
+    const res = await fetch(API + '/api/interpret', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
     });
     const data = await res.json();
@@ -411,7 +449,7 @@ async function sendComment(key, input, send, hint, ul, close) {
     hint.textContent = '';
     saveDraft(); renderComments(key, ul); updateBar(); close();
   } catch (ex) {
-    hint.textContent = ex instanceof TypeError ? 'Cannot reach AIDJ. Is the app still running?' : ex.message;
+    hint.textContent = ex instanceof TypeError ? OFFLINE : ex.message;
   } finally {
     send.disabled = false;
   }
@@ -467,8 +505,8 @@ function showResult(r, scroll) {
   current = r;
   loadDraft(r);
   $('rname').textContent = r.name;
-  player.src = r.file;
-  $('dl').href = r.file;
+  player.src = API + r.file;
+  $('dl').href = `${API}${r.file}?download=${encodeURIComponent(r.download_name)}`;
   $('dl').setAttribute('download', r.download_name);
   const list = $('tracklist');
   list.replaceChildren();
@@ -508,6 +546,8 @@ $('again').addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   $('url').focus();
 });
+
+checkApp();
 
 // After a reload: show the last mix again, and keep following a mix that is still being made.
 try { const last = JSON.parse(store.get('aidj-result')); if (last) showResult(last, false); } catch {}

@@ -68,6 +68,13 @@ python app.py
 
 Your browser opens **http://127.0.0.1:5050**. Next time you only need the `source …` and `python app.py` lines.
 
+### Or use the website
+
+The page is also online at **https://dyzerds.github.io/AIDJ/**. It is a remote control for the app above:
+the songs are still downloaded and mixed on your computer, so start AIDJ first (`start.bat` or `python app.py`),
+then open the website. If your browser asks whether the site may access apps on your device, allow it.
+Chrome, Edge and Firefox work. If your browser can't connect, just use **http://127.0.0.1:5050** instead.
+
 ---
 
 ## How to use it
@@ -146,7 +153,7 @@ Main files:
 | `analysis.py` | Tempo, beats, bars, key, loudness and song sections |
 | `mixer.py` | Plans and renders every transition |
 | `comments.py` | Understands your comments on transitions |
-| `static/index.html` | The web page |
+| `index.html` | The web page (also published on GitHub Pages) |
 | `selftest.py` | A self-check that needs no internet |
 
 ---
